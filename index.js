@@ -37,8 +37,6 @@ exports.mesh = function(mesh, cbExt)
     tp.pipes[id] = pipe;
     pipe.id = id;
     pipe.chunks = lob.chunking({size:32, blocking:true}, function receive(err, packet){
-      console.log("PACKET?")
-      console.log('got packet',packet,err);
       if(err || !packet)
       {
         mesh.log.error('pipe chunk read error',err,pipe.id);
@@ -59,6 +57,7 @@ exports.mesh = function(mesh, cbExt)
 
     var remove = function remove(){
       console.log("remove pipe?", this.id)
+      //TODO: trigger some sort of discovery callback
       tp.pipes[this.id] = null;
     }
 
@@ -66,7 +65,6 @@ exports.mesh = function(mesh, cbExt)
       if (err) return remove.bind(pipe)();
       sPort.on('error', remove.bind(pipe));
       sPort.on('close', remove.bind(pipe));
-      console.log("connected");
       sPort.pipe(pipe.chunks);
       pipe.chunks.pipe(sPort);
 //sPort.on('data',function(data){ console.log('serial data',data,data.toString());sPort.write(zero);});
@@ -93,23 +91,21 @@ exports.mesh = function(mesh, cbExt)
   // enable discovery mode, broadcast this packet
   tp.discover = function(opts, cbDisco){
 
-    console.log("setting usb discovery on")
     if (discoverinterval)
       clearInterval(discoverinterval)
     // turn off discovery
     if(!opts)
     {
-      return cbDisco();
+      return (cbDisco) ? cbDisco() : undefined;
     }
 
     discoverinterval = setInterval(function(){
-      console.log("discover interval")
       serialPort.list(function (err, ports) {
         ports.forEach(function(port) {
-          console.log("discover port", port.comName )
           if (!tp.pipes[port.comName]){
             tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
-              console.log("discovered pipe", port.comName)
+              //console.log("discovered pipe", port.comName)
+              return (cbDisco)? cbDisco() : undefined;
             });
           }
         });

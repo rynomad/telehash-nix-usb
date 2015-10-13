@@ -55,8 +55,10 @@ exports.mesh = function(mesh, cbExt)
     var sPort = new serialPort.SerialPort(path.port, {  baudrate: 115200}, false);
 
 
-    var remove = function remove(){
+    var remove = function remove(stat){
       console.log("remove pipe?", this.id)
+      this.message = stat;
+      this.removed = true;
       //TODO: trigger some sort of discovery callback
       tp.pipes[this.id] = null;
     }
@@ -110,7 +112,7 @@ exports.mesh = function(mesh, cbExt)
           }
         });
       });
-    }, opts.timer || 5000)
+    }, opts.timer || 500)
   }
   cbExt(null, tp)
 }

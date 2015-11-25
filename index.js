@@ -56,7 +56,6 @@ exports.mesh = function(mesh, cbExt)
 
 
     var remove = function remove(stat){
-      console.log("remove pipe?", this.id)
       this.message = stat;
       this.removed = true;
       //TODO: trigger some sort of discovery callback

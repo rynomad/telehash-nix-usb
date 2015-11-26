@@ -102,6 +102,10 @@ exports.mesh = function(mesh, cbExt)
 
     discoverinterval = setInterval(function(){
       serialPort.list(function (err, ports) {
+        if (err){
+          clearInterval(discoverInterval)
+          return cbDisco(err)
+        }
         ports.forEach(function(port) {
           if (!tp.pipes[port.comName]){
             tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){

@@ -103,7 +103,6 @@ exports.mesh = function(mesh, cbExt)
     discoverinterval = setInterval(function(){
       serialPort.list(function (err, ports) {
         if (err){
-          clearInterval(discoverinterval)
           return cbDisco(err)
         }
         ports.forEach(function(port) {

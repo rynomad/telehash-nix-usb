@@ -36,7 +36,9 @@ exports.mesh = function(mesh, cbExt)
     pipe.path = path;
     tp.pipes[id] = pipe;
     pipe.id = id;
+    pipe.link = link;
     pipe.chunks = lob.chunking({size:32, blocking:true}, function receive(err, packet){
+      console.log("got usb packet")
       if(err || !packet)
       {
         mesh.log.error('pipe chunk read error',err,pipe.id);
@@ -60,6 +62,9 @@ exports.mesh = function(mesh, cbExt)
       this.removed = true;
       //TODO: trigger some sort of discovery callback
       tp.pipes[this.id] = null;
+      //console.log("remove",stat)
+      sPort.close()
+      this.emit("close")
     }
 
     sPort.open(function (err) {
@@ -91,12 +96,13 @@ exports.mesh = function(mesh, cbExt)
 
   // enable discovery mode, broadcast this packet
   tp.discover = function(opts, cbDisco){
-
+    console.log("DISCOVER")
     if (discoverinterval)
       clearInterval(discoverinterval)
     // turn off discovery
     if(!opts)
     {
+      console.log("no opts")
       return (cbDisco) ? cbDisco() : undefined;
     }
 
@@ -108,7 +114,7 @@ exports.mesh = function(mesh, cbExt)
         ports.forEach(function(port) {
           if (!tp.pipes[port.comName]){
             tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
-              //console.log("discovered pipe", port.comName)
+              //console.log("discovered pipe", port.comName, pipe)
               return (cbDisco)? cbDisco() : undefined;
             });
           }

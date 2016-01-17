@@ -29,8 +29,8 @@ exports.mesh = function(mesh, cbExt)
     if(typeof path.port != 'string') return false;
     var id = path.port;
     var pipe = tp.pipes[id];
+    //console.log("tp.pipe", id)
     if(pipe) return cbPipe(pipe);
-
     pipe = new telehash.Pipe('nix-usb',exports.keepalive);
 
     pipe.path = path;
@@ -38,7 +38,7 @@ exports.mesh = function(mesh, cbExt)
     pipe.id = id;
     pipe.link = link;
     pipe.chunks = lob.chunking({size:32, blocking:true}, function receive(err, packet){
-      console.log("got usb packet")
+      //console.log("got usb packet", packet.head, packet.json)
       if(err || !packet)
       {
         mesh.log.error('pipe chunk read error',err,pipe.id);
@@ -58,17 +58,22 @@ exports.mesh = function(mesh, cbExt)
 
 
     var remove = function remove(stat){
+      this._close = null;
       this.message = stat;
       this.removed = true;
       //TODO: trigger some sort of discovery callback
       tp.pipes[this.id] = null;
       //console.log("remove",stat)
-      sPort.close()
-      this.emit("close")
+      this.emit("close", this);
+      this.removeAllListeners()
+
     }
 
     sPort.open(function (err) {
-      if (err) return remove.bind(pipe)();
+      if (err) {
+        console.log("SERIAL ERROR", err)
+        return remove.bind(pipe)(err)
+      };
       sPort.on('error', remove.bind(pipe));
       sPort.on('close', remove.bind(pipe));
       sPort.pipe(pipe.chunks);
@@ -80,8 +85,16 @@ exports.mesh = function(mesh, cbExt)
     });
 
     pipe.onSend = function(packet, link, cb){
+      //console.log("pipe onSend")
       pipe.chunks.send(packet);
       cb();
+      //console.log("pipe onSend return")
+    }
+
+    pipe._close = function(cb){
+      sPort.close(function(msg){
+        cb()
+      })
     }
     cbPipe(pipe);
   };
@@ -111,12 +124,23 @@ exports.mesh = function(mesh, cbExt)
         if (err){
           return cbDisco(err)
         }
+
         ports.forEach(function(port) {
-          if (!tp.pipes[port.comName]){
-            tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
-              //console.log("discovered pipe", port.comName, pipe)
-              return (cbDisco)? cbDisco() : undefined;
-            });
+          if (!tp.pipes[port.comName] && (!opts.vendorId || port.vendorId === opts.vendorId)){
+            //console.log("see device")
+            if (!opts.wait)
+              tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
+                //console.log("discovered pipe", port.comName, pipe)
+                return (cbDisco)? cbDisco() : undefined;
+              });
+            else {
+              setTimeout(function(){
+                tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
+                  //console.log("discovered pipe", port.comName, pipe)
+                  return (cbDisco)? cbDisco() : undefined;
+                })
+              }, opts.wait)
+            }
           }
         });
       });

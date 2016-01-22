@@ -63,7 +63,7 @@ exports.mesh = function(mesh, cbExt)
       this.removed = true;
       //TODO: trigger some sort of discovery callback
       tp.pipes[this.id] = null;
-      //console.log("remove",stat)
+      console.log("remove",stat)
       this.emit("close", this);
       this.removeAllListeners()
 
@@ -126,14 +126,19 @@ exports.mesh = function(mesh, cbExt)
         }
 
         ports.forEach(function(port) {
-          if (!tp.pipes[port.comName] && (!opts.vendorId || port.vendorId === opts.vendorId)){
+          if (!tp.pipes[port.comName]) {
+            if (opts.devName && port.comName !== opts.devName) {
+              return;
+            } else if (opts.vendorId && port.vendorId !== opts.vendorId) {
+              return;
+            }
             //console.log("see device")
-            if (!opts.wait)
+            if (!opts.wait) {
               tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
                 //console.log("discovered pipe", port.comName, pipe)
                 return (cbDisco)? cbDisco() : undefined;
               });
-            else {
+            } else {
               setTimeout(function(){
                 tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
                   //console.log("discovered pipe", port.comName, pipe)

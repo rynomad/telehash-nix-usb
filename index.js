@@ -16,6 +16,8 @@ function error(err)
   process.exit(1);
 }
 
+exports.Buffer = exports.Buffer || require("buffer").Buffer;
+
 // add our transport to this new mesh
 exports.mesh = function(mesh, cbExt)
 {
@@ -53,11 +55,17 @@ exports.mesh = function(mesh, cbExt)
         greeting.pipe = pipe;
         mesh.discovered(greeting);
       }else{
+        if (!(packet instanceof exports.Buffer))
+          packet = new exports.Buffer(packet)
+        mesh.receive(packet, pipe);
         mesh.receive(packet, pipe);
       }
     });
     pipe.onSend = function(packet, link, cb){
       //console.log("pipe onSend")
+      if (!(packet instanceof Buffer))
+        packet = new Buffer(packet);
+      pipe.chunks.send(packet)
       pipe.chunks.send(packet);
       cb();
       //console.log("pipe onSend return")

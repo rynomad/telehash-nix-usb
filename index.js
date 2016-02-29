@@ -3,10 +3,12 @@ var lob = require('lob-enc');
 var fs = require('fs');
 var crc = require('crc');
 var serialPort = require('serialport');
-
+var net = require('net')
+var stream = require('stream')
 exports.name = 'nix-usb';
 exports.port = 0;
 exports.ip = '0.0.0.0';
+exports.keepalive = 30000
 
 function error(err)
 {
@@ -37,7 +39,7 @@ exports.mesh = function(mesh, cbExt)
     tp.pipes[id] = pipe;
     pipe.id = id;
     pipe.link = link;
-    pipe.chunks = lob.chunking({size:32, blocking:true}, function receive(err, packet){
+    pipe.chunks = lob.chunking({size: path.mode == "host" ? 32 : 768, blocking:true}, function receive(err, packet){
       //console.log("got usb packet", packet.head, packet.json)
       if(err || !packet)
       {
@@ -54,8 +56,65 @@ exports.mesh = function(mesh, cbExt)
         mesh.receive(packet, pipe);
       }
     });
-    var sPort = new serialPort.SerialPort(path.port, {  baudrate: 115200}, false);
+    pipe.onSend = function(packet, link, cb){
+      //console.log("pipe onSend")
+      pipe.chunks.send(packet);
+      cb();
+      //console.log("pipe onSend return")
+    }
 
+    pipe.usePacking = function(socket){
+      //console.log("usePacking")
+      var pack = new stream.Transform({
+        transform : function (chunk, enc, cb){
+          //console.log(">>>", chunk.length + 1 , chunk.toString('base64'))
+          this.push(chunk.toString('base64') + '\n')
+          cb()
+        },
+        flush : function (done){
+          done()
+        }
+      })
+
+      var unpack = new stream.Transform({
+        transform : function (chunk, enc, cb){
+        //console.log("<<<", chunk.length, chunk.toString())
+          chunk.toString().split("\n").forEach((chnk) => {
+            if (chnk)
+              this.push(new Buffer(chnk,'base64'))
+          })
+          cb()
+        },
+        flush : function (done){
+          done()
+        }
+      })
+
+      pipe.sock = socket;
+
+      socket.pipe(unpack).pipe(pipe.chunks).pipe(pack).pipe(socket);
+    }
+
+    pipe.close = function(cb){
+      sPort.close(function(msg){
+        cb()
+      })
+    }
+
+    var ttyConnect = () => {
+      console.log('ttyconnect')
+      var sock = net.createConnection(path.port)
+      sock.on('error', remove.bind(pipe))
+      sock.on('close', remove.bind(pipe))
+      pipe.usePacking(sock)
+    }
+
+    if (path.mode === "device-tty"){
+      ttyConnect()
+      return;
+    }
+
+    var sPort = new serialPort.SerialPort(path.port, {  baudrate: 115200}, false);
 
     var remove = function remove(stat){
       this._close = null;
@@ -66,7 +125,8 @@ exports.mesh = function(mesh, cbExt)
       console.log("remove",stat)
       this.emit("close", this);
       this.removeAllListeners()
-
+      tp.discover(false)
+      setTimeout(() => tp.discover({mode : {mode : path.mode, vendorId : path.vendorId, productId : path.productId}}), 5000)
     }
 
     sPort.open(function (err) {
@@ -74,28 +134,44 @@ exports.mesh = function(mesh, cbExt)
         console.log("SERIAL ERROR", err)
         return remove.bind(pipe)(err)
       };
+
       sPort.on('error', remove.bind(pipe));
       sPort.on('close', remove.bind(pipe));
-      sPort.pipe(pipe.chunks);
-      pipe.chunks.pipe(sPort);
+      if (path.mode === "host-tty"){
+        console.log("usePacking")
+        process.on('exit', () => {
+          sPort.write("'\n")
+        })
+        sPort.on('data', (data) => {
+          if (data[0] === ("'").charCodeAt(0)){
+            console.log("got apostraphe")
+            sPort.close()
+          }
+        })
+        
+        
+        
+        sPort.once('data', (d) => {
+          console.log("got data", d.toString())
+          if (d.toString().indexOf("login:") === 0 || d.toString().indexOf("0000000") == 0){
+            console.log('got tty bounce')
+            pipe.usePacking(sPort)
+            pipe.chunks.send(lob.encode(mesh.json()))
+          }
+        })
+        sPort.write("0000000000000000\n")
+      } else {
+        sPort.pipe(pipe.chunks).pipe(sPort);
+        pipe.chunks.send(lob.encode(mesh.json()));
+      }
 //sPort.on('data',function(data){ console.log('serial data',data,data.toString());sPort.write(zero);});
 //      sPort.write(zero);
       // send discovery greeting
-      pipe.chunks.send(lob.encode(mesh.json()));
+      console.log("send greeting")
+      
     });
 
-    pipe.onSend = function(packet, link, cb){
-      //console.log("pipe onSend")
-      pipe.chunks.send(packet);
-      cb();
-      //console.log("pipe onSend return")
-    }
 
-    pipe._close = function(cb){
-      sPort.close(function(msg){
-        cb()
-      })
-    }
     cbPipe(pipe);
   };
 
@@ -108,48 +184,60 @@ exports.mesh = function(mesh, cbExt)
   var potentials = {};
 
   // enable discovery mode, broadcast this packet
-  tp.discover = function(opts, cbDisco){
+  tp.discover = function(OPTS, cbDisco){
     console.log("DISCOVER")
     if (discoverinterval)
       clearInterval(discoverinterval)
     // turn off discovery
-    if(!opts)
+    if(!OPTS)
     {
       console.log("no opts")
       return (cbDisco) ? cbDisco() : undefined;
     }
 
-    discoverinterval = setInterval(function(){
-      serialPort.list(function (err, ports) {
-        if (err){
-          return cbDisco(err)
-        }
+    var modes = OPTS.modes ? OPTS.modes : [OPTS.mode || { mode : "host"}];
 
-        ports.forEach(function(port) {
-          if (!tp.pipes[port.comName]) {
-            if (opts.devName && port.comName !== opts.devName) {
-              return;
-            } else if (opts.vendorId && port.vendorId !== opts.vendorId) {
-              return;
+    modes.forEach(function (mode_opts, idx) {
+      'use strict';
+      var opts = Object.assign(OPTS, mode_opts)
+      var mode = opts.mode;
+      var port = "/tmp/device-tty";
+
+      if (mode == "device-tty"){
+        tp.pipe(false, {type:'nix-usb',port:port, mode : mode}, function(pipe, err){
+          if (err)
+            console.log("unable to discover usb in device-tty mode")
+        })
+      } else {
+        discoverinterval = setInterval(function(){
+          serialPort.list(function (err, ports) {
+            if (err){
+              return cbDisco(err)
             }
-            //console.log("see device")
-            if (!opts.wait) {
-              tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
-                //console.log("discovered pipe", port.comName, pipe)
-                return (cbDisco)? cbDisco() : undefined;
-              });
-            } else {
-              setTimeout(function(){
-                tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
-                  //console.log("discovered pipe", port.comName, pipe)
-                  return (cbDisco)? cbDisco() : undefined;
-                })
-              }, opts.wait)
-            }
-          }
-        });
-      });
-    }, opts.timer || 500)
+
+            ports.forEach(function(port) {
+              if (!tp.pipes[port.comName]) {
+                if (opts.devName && port.comName !== opts.devName) {
+                  return;
+                } else if (opts.vendorId && port.vendorId !== opts.vendorId) {
+                  return;
+                }
+                //console.log("see device")
+
+                setTimeout(function(){
+                  tp.pipe(false, {type:'nix-usb',port:port.comName, mode : mode}, function(pipe){
+                    //console.log("discovered pipe", port.comName, pipe)
+                    return (cbDisco)? cbDisco() : undefined;
+                  })
+                }, opts.wait || 0)
+              }
+            });
+          });
+        }, opts.timer || 500)
+      } 
+    })
+
+    
   }
   cbExt(null, tp)
 }

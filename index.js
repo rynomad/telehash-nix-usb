@@ -32,7 +32,7 @@ exports.mesh = function(mesh, cbExt)
     //console.log("tp.pipe", id)
     if(pipe) return cbPipe(pipe);
     pipe = new telehash.Pipe('nix-usb',exports.keepalive);
-
+    //console.log("created pipe")
     pipe.path = path;
     tp.pipes[id] = pipe;
     pipe.id = id;
@@ -109,7 +109,7 @@ exports.mesh = function(mesh, cbExt)
 
   // enable discovery mode, broadcast this packet
   tp.discover = function(opts, cbDisco){
-    console.log("DISCOVER")
+    console.log("DISCOVERYYYYY")
     if (discoverinterval)
       clearInterval(discoverinterval)
     // turn off discovery
@@ -120,12 +120,15 @@ exports.mesh = function(mesh, cbExt)
     }
 
     discoverinterval = setInterval(function(){
+      //console.log("interval")
       serialPort.list(function (err, ports) {
         if (err){
           return cbDisco(err)
         }
 
+
         ports.forEach(function(port) {
+          //console.log("ports", port, opts)
           if (!tp.pipes[port.comName]) {
             if (opts.devName && port.comName !== opts.devName) {
               return;
@@ -133,19 +136,13 @@ exports.mesh = function(mesh, cbExt)
               return;
             }
             //console.log("see device")
-            if (!opts.wait) {
+            setTimeout(function(){
+              //console.log("after timeout")
               tp.pipe(false, {type:'nix-usb',port:port.comName, vendorId: port.vendorId, productId : port.productId}, function(pipe){
                 //console.log("discovered pipe", port.comName, pipe)
                 return (cbDisco)? cbDisco() : undefined;
-              });
-            } else {
-              setTimeout(function(){
-                tp.pipe(false, {type:'nix-usb',port:port.comName, vendorId: port.vendorId, productId : port.productId}, function(pipe){
-                  //console.log("discovered pipe", port.comName, pipe)
-                  return (cbDisco)? cbDisco() : undefined;
-                })
-              }, opts.wait)
-            }
+              })
+            }, opts.wait || 10)
           }
         });
       });

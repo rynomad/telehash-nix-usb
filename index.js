@@ -134,13 +134,13 @@ exports.mesh = function(mesh, cbExt)
             }
             //console.log("see device")
             if (!opts.wait) {
-              tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
+              tp.pipe(false, {type:'nix-usb',port:port.comName, vendorId: port.vendorId, productId : port.productId}, function(pipe){
                 //console.log("discovered pipe", port.comName, pipe)
                 return (cbDisco)? cbDisco() : undefined;
               });
             } else {
               setTimeout(function(){
-                tp.pipe(false, {type:'nix-usb',port:port.comName}, function(pipe){
+                tp.pipe(false, {type:'nix-usb',port:port.comName, vendorId: port.vendorId, productId : port.productId}, function(pipe){
                   //console.log("discovered pipe", port.comName, pipe)
                   return (cbDisco)? cbDisco() : undefined;
                 })

@@ -38,7 +38,7 @@ exports.mesh = function(mesh, cbExt)
     pipe.id = id;
     pipe.link = link;
     pipe.chunks = lob.chunking({size:32, blocking:true}, function receive(err, packet){
-      //console.log("got usb packet", packet.head, packet.json)
+      //console.log("got usb packet", packet.head, packet.json, packet)
       if(err || !packet)
       {
         mesh.log.error('pipe chunk read error',err,pipe.id);
@@ -47,10 +47,12 @@ exports.mesh = function(mesh, cbExt)
       // handle incoming greeting as a discovery
       if(packet.head.length > 1)
       {
+        //console.log("DISCO")
         var greeting = packet.json;
         greeting.pipe = pipe;
         mesh.discovered(greeting);
       }else{
+        //console.log("RECV")
         mesh.receive(packet, pipe);
       }
     });
@@ -63,7 +65,6 @@ exports.mesh = function(mesh, cbExt)
       this.removed = true;
       //TODO: trigger some sort of discovery callback
       tp.pipes[this.id] = null;
-      console.log("remove",stat)
       this.emit("close", this);
       this.removeAllListeners()
 
@@ -71,7 +72,7 @@ exports.mesh = function(mesh, cbExt)
 
     sPort.open(function (err) {
       if (err) {
-        console.log("SERIAL ERROR", err)
+        //console.log("SERIAL ERROR", err)
         return remove.bind(pipe)(err)
       };
       sPort.on('error', remove.bind(pipe));
@@ -109,7 +110,7 @@ exports.mesh = function(mesh, cbExt)
 
   // enable discovery mode, broadcast this packet
   tp.discover = function(opts, cbDisco){
-    console.log("DISCOVERYYYYY")
+    //console.log("DISCOVERYYYYY")
     if (discoverinterval)
       clearInterval(discoverinterval)
     // turn off discovery
